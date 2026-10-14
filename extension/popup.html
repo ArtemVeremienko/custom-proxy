@@ -11,15 +11,22 @@
     <label>Port<input name="port" type="number" min="1" max="65535" value="3129" required></label>
     <label>Username<input name="username" required autocomplete="username"></label>
     <label>Password<input name="password" type="password" required autocomplete="off"></label>
-    <div class="buttons"><button type="submit">Connect</button></div>
+    <label class="remember"><input name="remember" type="checkbox"> Remember credentials on this device</label>
+    <p class="storage-warning">Remembered passwords are stored locally in your Chrome profile, not in a secure password vault. Use a unique proxy password and avoid this option on shared computers.</p>
+    <div class="buttons"><button type="submit">Save &amp; Connect</button></div>
   </form>
   </section>
   <section id="connected" hidden>
     <p id="endpoint"></p>
-    <button id="disconnect" type="button">Disconnect</button>
+    <div class="buttons">
+      <button id="connect-saved" type="button" hidden>Connect</button>
+      <button id="disconnect" type="button">Disconnect</button>
+      <button id="reset" type="button">Reset credentials</button>
+    </div>
   </section>
   <p id="status" role="status" aria-live="polite"></p>
-  <small>Passwords are kept for this browser session. Connecting applies settings; open a website to verify connectivity.</small>
+  <small id="storage-note"></small>
+  <p><small>Connecting applies settings; open a website to verify connectivity.</small></p>
   <script type="module" src="popup.js"></script>
 </body>
 </html>
