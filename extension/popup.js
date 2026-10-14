@@ -1,12 +1,19 @@
 const form = document.querySelector('form');
 const status = document.querySelector('#status');
+const setup = document.querySelector('#setup');
+const connected = document.querySelector('#connected');
 async function refresh() {
   const result = await chrome.runtime.sendMessage({ type: 'status' });
   if (result.error) throw new Error(result.error);
   for (const [key, value] of Object.entries(result.settings ?? {})) form.elements[key].value = value;
+  setup.hidden = result.active;
+  connected.hidden = !result.active;
+  document.querySelector('#endpoint').textContent = result.settings
+    ? `${result.settings.host}:${result.settings.port}` : 'Proxy enabled';
   status.textContent = result.active
-    ? result.hasCredentials ? 'Proxy settings applied. Open a website to verify connectivity.' : 'Proxy settings remain active. Enter your password and reconnect.'
+    ? result.hasCredentials ? 'Proxy enabled for regular and permitted incognito windows.' : 'Proxy enabled, but this session has no password. Disconnect, then reconnect.'
     : `Proxy inactive. Control: ${result.control}.`;
+  if (result.active && result.authStatus?.message) status.textContent = result.authStatus.message;
 }
 async function run(type) {
   const buttons = document.querySelectorAll('button');
@@ -23,3 +30,6 @@ async function run(type) {
 form.addEventListener('submit', event => { event.preventDefault(); run('connect'); });
 document.querySelector('#disconnect').addEventListener('click', () => run('disconnect'));
 refresh().catch(error => status.textContent = error.message);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.authStatus) refresh().catch(error => status.textContent = error.message);
+});

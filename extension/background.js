@@ -2,10 +2,31 @@ import { validate, proxyConfig, matchesProxy } from './config.js';
 
 const attempts = new Map();
 chrome.webRequest.onAuthRequired.addListener((details, callback) => {
-  chrome.storage.session.get('credentials').then(({ credentials }) => {
-    if (!matchesProxy(details, credentials)) return callback({});
-    if (attempts.has(details.requestId)) return callback({ cancel: true });
+  if (!details.isProxy) return callback({});
+  Promise.all([
+    chrome.storage.session.get('credentials'),
+    chrome.storage.local.get('settings')
+  ]).then(async ([{ credentials }, { settings }]) => {
+    if (!matchesProxy(details, credentials ?? settings)) {
+      await chrome.storage.session.set({ authStatus: {
+        message: 'Chrome requested authentication for a different proxy endpoint. Check your hostname and port.'
+      } });
+      return callback({});
+    }
+    if (!credentials || attempts.has(details.requestId)) {
+      if (!credentials) {
+        const current = await chrome.proxy.settings.get({ incognito: false });
+        if (current.levelOfControl !== 'controlled_by_this_extension') return callback({});
+      }
+      await chrome.storage.session.set({ authStatus: {
+        message: credentials
+          ? 'The proxy rejected the saved credentials. Disconnect and reconnect with the correct username and password.'
+          : 'Proxy credentials expired with the browser session. Disconnect and reconnect.'
+      } });
+      return callback({ cancel: true });
+    }
     attempts.set(details.requestId, true);
+    await chrome.storage.session.remove('authStatus');
     callback({ authCredentials: { username: credentials.username, password: credentials.password } });
   }).catch(() => callback({ cancel: true }));
 }, { urls: ['<all_urls>'] }, ['asyncBlocking']);
@@ -20,7 +41,8 @@ async function handle(message) {
       chrome.storage.local.get('settings'),
       chrome.storage.session.get('credentials')
     ]);
-    return { settings: local.settings, control: proxy.levelOfControl,
+    const { authStatus } = await chrome.storage.session.get('authStatus');
+    return { settings: local.settings, authStatus, control: proxy.levelOfControl,
       active: proxy.levelOfControl === 'controlled_by_this_extension',
       hasCredentials: Boolean(session.credentials) };
   }
@@ -31,6 +53,7 @@ async function handle(message) {
       throw new Error('Chrome proxy settings are controlled by policy or another extension.');
     }
     const previous = await chrome.storage.session.get('credentials');
+    await chrome.storage.session.remove('authStatus');
     await chrome.storage.session.set({ credentials });
     try {
       // Incognito inherits regular settings; spanning mode shares this worker
@@ -49,6 +72,7 @@ async function handle(message) {
   if (message.type === 'disconnect') {
     await chrome.proxy.settings.clear({ scope: 'regular' });
     await chrome.storage.session.remove('credentials');
+    await chrome.storage.session.remove('authStatus');
     attempts.clear();
     return { ok: true };
   }

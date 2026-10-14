@@ -49,6 +49,7 @@ test('background connection, authentication boundaries, retries, rollback and di
       authCredentials: { username: settings.username, password: settings.password }
     });
     assert.deepEqual(await auth(challenge), { cancel: true });
+    assert.match((await message({ type: 'status' })).authStatus.message, /rejected the saved credentials/);
     listeners.completed({ requestId: '1' });
     assert.ok((await auth(challenge)).authCredentials);
     listeners.error({ requestId: '1' });
@@ -58,6 +59,9 @@ test('background connection, authentication boundaries, retries, rollback and di
     assert.match((await message({ type: 'connect', settings: { ...settings, password: 'replacement' } })).error, /Proxy update failed/);
     assert.equal(session.credentials.password, settings.password);
     failSet = false;
+    delete session.credentials;
+    assert.deepEqual(await auth({ ...challenge, requestId: 'after-restart' }), { cancel: true });
+    assert.match((await message({ type: 'status' })).authStatus.message, /expired/);
     control = 'not_controllable';
     assert.match((await message({ type: 'connect', settings })).error, /controlled by policy/);
     assert.deepEqual(await message({ type: 'disconnect' }), { ok: true });

@@ -3,6 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Private proxy</title><link rel="stylesheet" href="popup.css"></head>
 <body>
   <h1>Private proxy</h1>
+  <section id="setup">
   <p>Use the hostname on your proxy's TLS certificate.</p>
   <p>Regular and incognito windows share this connection. Enable <strong>Allow in Incognito</strong> in the extension's Details to use it there.</p>
   <form id="connection">
@@ -10,8 +11,13 @@
     <label>Port<input name="port" type="number" min="1" max="65535" value="3129" required></label>
     <label>Username<input name="username" required autocomplete="username"></label>
     <label>Password<input name="password" type="password" required autocomplete="off"></label>
-    <div class="buttons"><button type="submit">Connect</button><button id="disconnect" type="button">Disconnect</button></div>
+    <div class="buttons"><button type="submit">Connect</button></div>
   </form>
+  </section>
+  <section id="connected" hidden>
+    <p id="endpoint"></p>
+    <button id="disconnect" type="button">Disconnect</button>
+  </section>
   <p id="status" role="status" aria-live="polite"></p>
   <small>Passwords are kept for this browser session. Connecting applies settings; open a website to verify connectivity.</small>
   <script type="module" src="popup.js"></script>
