@@ -1,12 +1,22 @@
 import { validate, proxyConfig, matchesProxy } from './config.js';
 
+// Keep stored passwords unavailable to content scripts. Never use storage.sync.
+const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+storageReady.catch(() => {});
 const attempts = new Map();
+async function storedCredentials() {
+  await storageReady;
+  const { credentials } = await chrome.storage.session.get('credentials');
+  if (credentials) return credentials;
+  const { savedCredentials } = await chrome.storage.local.get('savedCredentials');
+  return savedCredentials;
+}
 chrome.webRequest.onAuthRequired.addListener((details, callback) => {
   if (!details.isProxy) return callback({});
-  Promise.all([
-    chrome.storage.session.get('credentials'),
-    chrome.storage.local.get('settings')
-  ]).then(async ([{ credentials }, { settings }]) => {
+  Promise.all([storedCredentials(), chrome.storage.local.get('settings')]).then(async ([credentials, { settings }]) => {
+    // A disconnected extension must not authenticate another proxy's requests.
+    const current = await chrome.proxy.settings.get({ incognito: false });
+    if (current.levelOfControl !== 'controlled_by_this_extension') return callback({});
     if (!matchesProxy(details, credentials ?? settings)) {
       await chrome.storage.session.set({ authStatus: {
         message: 'Chrome requested authentication for a different proxy endpoint. Check your hostname and port.'
@@ -14,14 +24,10 @@ chrome.webRequest.onAuthRequired.addListener((details, callback) => {
       return callback({});
     }
     if (!credentials || attempts.has(details.requestId)) {
-      if (!credentials) {
-        const current = await chrome.proxy.settings.get({ incognito: false });
-        if (current.levelOfControl !== 'controlled_by_this_extension') return callback({});
-      }
       await chrome.storage.session.set({ authStatus: {
         message: credentials
-          ? 'The proxy rejected the saved credentials. Disconnect and reconnect with the correct username and password.'
-          : 'Proxy credentials expired with the browser session. Disconnect and reconnect.'
+          ? 'The proxy rejected the saved credentials. Reset credentials and enter the correct username and password.'
+          : 'Session credentials expired. Reset credentials to enter them again.'
       } });
       return callback({ cancel: true });
     }
@@ -35,43 +41,57 @@ chrome.webRequest.onCompleted.addListener(cleanup, { urls: ['<all_urls>'] });
 chrome.webRequest.onErrorOccurred.addListener(cleanup, { urls: ['<all_urls>'] });
 
 async function handle(message) {
+  await storageReady;
   if (message.type === 'status') {
-    const [proxy, local, session] = await Promise.all([
+    const [proxy, local, credentials, session] = await Promise.all([
       chrome.proxy.settings.get({ incognito: false }),
-      chrome.storage.local.get('settings'),
-      chrome.storage.session.get('credentials')
+      chrome.storage.local.get(['settings', 'savedCredentials']),
+      storedCredentials(),
+      chrome.storage.session.get('authStatus')
     ]);
-    const { authStatus } = await chrome.storage.session.get('authStatus');
-    return { settings: local.settings, authStatus, control: proxy.levelOfControl,
+    // Return metadata only; passwords never travel back to the popup.
+    return { settings: local.settings, authStatus: session.authStatus, control: proxy.levelOfControl,
       active: proxy.levelOfControl === 'controlled_by_this_extension',
-      hasCredentials: Boolean(session.credentials) };
+      hasCredentials: Boolean(credentials), remembered: Boolean(local.savedCredentials) };
   }
   if (message.type === 'connect') {
-    const credentials = validate(message.settings);
+    const credentials = message.settings ? validate(message.settings) : await storedCredentials();
+    if (!credentials) throw new Error('Enter your proxy credentials first.');
     const current = await chrome.proxy.settings.get({ incognito: false });
     if (!['controllable_by_this_extension', 'controlled_by_this_extension'].includes(current.levelOfControl)) {
       throw new Error('Chrome proxy settings are controlled by policy or another extension.');
     }
-    const previous = await chrome.storage.session.get('credentials');
-    await chrome.storage.session.remove('authStatus');
-    await chrome.storage.session.set({ credentials });
+    const previousSession = await chrome.storage.session.get('credentials');
+    const previousLocal = await chrome.storage.local.get(['settings', 'savedCredentials']);
     try {
-      // Incognito inherits regular settings; spanning mode shares this worker
-      // and its session credentials when the user allows incognito access.
+      await chrome.storage.session.set({ credentials });
+      if (message.settings) {
+        const { password, ...settings } = credentials;
+        await chrome.storage.local.set({ settings });
+        if (message.remember === true) await chrome.storage.local.set({ savedCredentials: credentials });
+        else await chrome.storage.local.remove('savedCredentials');
+      }
+      // Regular settings are inherited by permitted incognito windows.
       await chrome.proxy.settings.set({ value: proxyConfig(credentials), scope: 'regular' });
     } catch (error) {
-      if (previous.credentials) await chrome.storage.session.set(previous);
-      else await chrome.storage.session.remove('credentials');
+      await chrome.storage.session.remove('credentials');
+      if (previousSession.credentials) await chrome.storage.session.set(previousSession);
+      await chrome.storage.local.remove(['settings', 'savedCredentials']);
+      const restored = Object.fromEntries(Object.entries(previousLocal).filter(([, value]) => value !== undefined));
+      if (Object.keys(restored).length) await chrome.storage.local.set(restored);
       throw error;
     }
-    const { password, ...settings } = credentials;
-    await chrome.storage.local.set({ settings });
+    await chrome.storage.session.remove('authStatus');
     attempts.clear();
     return { ok: true };
   }
-  if (message.type === 'disconnect') {
+  if (message.type === 'disconnect' || message.type === 'reset') {
+    // Clear the proxy before deleting credentials so failure preserves usable state.
     await chrome.proxy.settings.clear({ scope: 'regular' });
-    await chrome.storage.session.remove('credentials');
+    if (message.type === 'reset') {
+      await chrome.storage.session.remove('credentials');
+      await chrome.storage.local.remove(['settings', 'savedCredentials']);
+    }
     await chrome.storage.session.remove('authStatus');
     attempts.clear();
     return { ok: true };
