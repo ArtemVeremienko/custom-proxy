@@ -33,6 +33,8 @@ async function handle(message) {
     const previous = await chrome.storage.session.get('credentials');
     await chrome.storage.session.set({ credentials });
     try {
+      // Incognito inherits regular settings; spanning mode shares this worker
+      // and its session credentials when the user allows incognito access.
       await chrome.proxy.settings.set({ value: proxyConfig(credentials), scope: 'regular' });
     } catch (error) {
       if (previous.credentials) await chrome.storage.session.set(previous);

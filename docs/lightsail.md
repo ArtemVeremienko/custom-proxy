@@ -150,13 +150,16 @@ Do not use `--proxy-insecure` or `-k`. An invalid password must fail with 407; r
 
 1. Download/clone this repository on your desktop. Open `chrome://extensions`.
 2. Enable **Developer mode**, choose **Load unpacked**, and select `extension/`.
+   In the extension's **Details**, enable **Allow in Incognito** to use the shared connection in incognito windows. If upgrading an existing unpacked installation, click its reload button first.
 3. Pin/open **Lightsail Private Proxy**. Enter `proxy.example.com`, `3129`, and your proxy username/password.
 4. Click **Connect**, then open `https://api.ipify.org` in a new tab. The returned IP should be Lightsail's address. Also open an ordinary HTTPS website.
 5. Click **Disconnect** and reload the IP page; your normal egress address should return. If your normal network already uses the same egress, compare Squid's access log instead.
 
+For incognito, also open `https://api.ipify.org` in an incognito window while connected. Both regular and incognito windows should show the Lightsail IP. Disconnect from either window and verify both return to their underlying connection. The extension uses Chrome's spanning mode: one background worker, one set of session credentials, and regular proxy settings inherited by incognito. There is no separate incognito connection. Incognito does not hide activity from the proxy operator.
+
 Connect reports that Chrome settings were applied, not that the server is reachable. A bad password must fail browsing; correct it and reconnect. Test reconnect after a full Chrome restart. Credentials are kept only in Chrome session storage; the host, port, and username are saved locally. Chrome itself may cache authentication until connections/browser sessions end. Disconnect before removing the extension.
 
-The extension needs proxy control, session/local storage, and authentication events across URLs to answer proxy challenges. It supplies credentials only for proxy challenges matching your configured hostname and port, never for website login challenges. It does not collect or transmit browsing history to a separate service. Chrome policy or another proxy extension may prevent control. Use regular-profile Chrome; incognito is disabled for this extension.
+The extension needs proxy control, session/local storage, and authentication events across URLs to answer proxy challenges. It supplies credentials only for proxy challenges matching your configured hostname and port, never for website login challenges. It does not collect or transmit browsing history to a separate service. Chrome policy or another proxy extension may prevent control. Enable **Allow in Incognito** before using the extension in incognito; otherwise its authentication handler cannot service incognito requests even if Chrome inherits proxy settings.
 
 This is a browser forward proxy, not a system VPN or a guarantee against IP leaks. Chrome bypasses loopback addresses, and WebRTC and other non-proxy traffic can follow different network paths. Do not use it as an anonymity tool. Keep Ubuntu, Squid, Chrome, and the extension updated.
 
