@@ -4,8 +4,9 @@ Run a private, authenticated HTTPS proxy on AWS Lightsail and connect with Chrom
 
 1. Follow [the Lightsail setup guide](docs/lightsail.md).
 2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `extension` folder.
-3. Open the extension and enter your proxy's hostname, port `3129`, username, and password. Click **Connect**, then open a website to verify connectivity.
+3. To use the same connection in incognito, open the extension's **Details** and enable **Allow in Incognito**.
+4. Open the extension and enter your proxy's hostname, port `3129`, username, and password. Click **Connect**, then open a website to verify connectivity in regular and incognito windows.
 
 No build or npm installation is required. Run `node --test tests/*.test.mjs` for the configuration tests.
 
-Passwords are stored only in Chrome session storage. Reconnect after restarting Chrome: proxy settings may remain active without credentials. Disconnect restores Chrome's underlying proxy configuration. This controls the regular Chrome profile only, not other applications or incognito. Chrome bypasses loopback addresses, and WebRTC can use other network paths. This is not a VPN or an anonymity tool.
+Passwords are stored only in Chrome session storage. Reconnect after restarting Chrome: proxy settings may remain active without credentials. Regular and incognito windows share the same proxy and credentials when **Allow in Incognito** is enabled. Connecting or disconnecting from either window affects both. Disconnect restores Chrome's underlying proxy configuration. This controls Chrome, not other applications. Chrome bypasses loopback addresses, and WebRTC can use other network paths. This is not a VPN or an anonymity tool. Incognito does not hide activity from the proxy operator.

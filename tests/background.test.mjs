@@ -19,11 +19,15 @@ test('background connection, authentication boundaries, retries, rollback and di
     proxy: { settings: {
       get: async () => ({ levelOfControl: control, value }),
       set: async input => {
+        assert.equal(input.scope, 'regular', 'Incognito must inherit the shared regular connection');
         if (failSet) throw new Error('Proxy update failed');
         value = input.value;
         control = 'controlled_by_this_extension';
       },
-      clear: async () => { value = undefined; control = 'controllable_by_this_extension'; }
+      clear: async input => {
+        assert.equal(input.scope, 'regular', 'Disconnect must clear the shared connection');
+        value = undefined; control = 'controllable_by_this_extension';
+      }
     } },
     runtime: { id: 'test-extension', onMessage: event('message') },
     webRequest: { onAuthRequired: event('auth'), onCompleted: event('completed'), onErrorOccurred: event('error') }
@@ -41,6 +45,9 @@ test('background connection, authentication boundaries, retries, rollback and di
     assert.deepEqual(await auth({ ...challenge, isProxy: false }), {});
     assert.deepEqual(await auth({ ...challenge, challenger: { host: 'attacker.example', port: 3129 } }), {});
     assert.deepEqual(await auth(challenge), { authCredentials: { username: settings.username, password: settings.password } });
+    assert.deepEqual(await auth({ ...challenge, requestId: 'incognito-1', incognito: true }), {
+      authCredentials: { username: settings.username, password: settings.password }
+    });
     assert.deepEqual(await auth(challenge), { cancel: true });
     listeners.completed({ requestId: '1' });
     assert.ok((await auth(challenge)).authCredentials);
