@@ -35,7 +35,7 @@ test('manifest declares MV3 auth provider and existing assets', async () => {
   assert.equal(manifest.manifest_version, 3);
   assert.ok(manifest.permissions.includes('webRequestAuthProvider'));
   assert.ok(manifest.permissions.includes('proxy'));
-  assert.equal(manifest.incognito, 'not_allowed');
+  assert.equal(manifest.incognito, 'spanning');
   for (const file of [manifest.background.service_worker, manifest.action.default_popup]) {
     assert.ok((await readFile(new URL('../extension/' + file, import.meta.url))).length);
   }
