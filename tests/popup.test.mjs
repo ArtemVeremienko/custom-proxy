@@ -14,7 +14,8 @@ test('popup keeps saved controls after disconnect and restores setup after reset
   };
   const elements = {
     form, '#status': {}, '#setup': {}, '#connected': {}, '#endpoint': {},
-    '#storage-note': {},
+    '#storage-note': {}, '#connection-status': {},
+    '#check': { addEventListener: (_, callback) => { handlers.check = callback; } },
     '#connect-saved': { addEventListener: (_, callback) => { handlers.connect = callback; } },
     '#reset': { addEventListener: (_, callback) => { handlers.reset = callback; } },
     '#disconnect': { addEventListener: (_, callback) => { handlers.disconnect = callback; } }
@@ -24,6 +25,7 @@ test('popup keeps saved controls after disconnect and restores setup after reset
     confirm: () => true,
     FormData: class { *[Symbol.iterator]() {} },
     chrome: {
+      proxy: { settings: { onChange: { addListener() {} } } },
       storage: { onChanged: { addListener() {} } },
       runtime: { sendMessage: async ({ type }) => {
         if (type === 'disconnect') { active = false; return { ok: true }; }
