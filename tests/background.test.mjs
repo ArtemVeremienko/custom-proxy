@@ -73,6 +73,11 @@ test('background connection, authentication boundaries, retries, rollback and di
     });
     assert.deepEqual(await auth(challenge), { cancel: true });
     assert.match((await message({ type: 'status' })).authStatus.message, /rejected the saved credentials/);
+    assert.ok((await auth({ ...challenge, requestId: '2' })).authCredentials);
+    assert.match((await message({ type: 'status' })).authStatus.message, /rejected the saved credentials/);
+    listeners.completed({ requestId: '2' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await message({ type: 'status' })).authStatus, undefined);
     listeners.completed({ requestId: '1' });
     assert.ok((await auth(challenge)).authCredentials);
     listeners.error({ requestId: '1' });
@@ -155,8 +160,28 @@ test('background connection, authentication boundaries, retries, rollback and di
     };
     assert.match((await message({ type: 'check' })).error, /settings changed/);
     assert.equal((await message({ type: 'status' })).connectionCheck, undefined);
+
+    // Disconnecting mid-check aborts the stale fetch so a fresh check runs immediately after reconnecting.
+    control = 'controlled_by_this_extension';
+    let aborted = false;
+    globalThis.fetch = (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        aborted = true;
+        reject(options.signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      });
+    });
+    const staleCheck = message({ type: 'check' });
+    await new Promise(resolve => setImmediate(resolve));
+    await message({ type: 'disconnect' });
+    assert.equal(aborted, true);
+    assert.match((await staleCheck).error, /settings changed/);
+    globalThis.fetch = async () => ({ ok: true, body: { cancel: async () => {} } });
+    await message({ type: 'connect', settings });
+    assert.equal((await message({ type: 'check' })).connectionCheck.outcome, 'verified');
+
     await message({ type: 'reset' });
     assert.equal(listeners.message({}, { id: 'other-extension' }, () => assert.fail('Foreign sender accepted')), false);
+    assert.equal(listeners.message({}, { id: 'test-extension', tab: { id: 1 } }, () => assert.fail('Tab sender accepted')), false);
   } finally {
     globalThis.fetch = originalFetch;
     delete globalThis.chrome;

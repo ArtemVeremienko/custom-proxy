@@ -1,6 +1,8 @@
 export function validate(input) {
+  if (!input || typeof input !== 'object') throw new Error('Proxy settings are required.');
   const host = String(input.host ?? '').trim().toLowerCase();
-  const port = Number(input.port);
+  const rawPort = input.port;
+  const port = (typeof rawPort === 'number' || (typeof rawPort === 'string' && rawPort.trim() !== '')) ? Number(rawPort) : NaN;
   const username = String(input.username ?? '').trim();
   const password = String(input.password ?? '');
   if (!host || host.length > 253 || !host.split('.').every(part =>

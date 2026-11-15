@@ -33,13 +33,16 @@ chrome.webRequest.onAuthRequired.addListener((details, callback) => {
       return callback({ cancel: true });
     }
     attempts.set(details.requestId, true);
-    await chrome.storage.session.remove('authStatus');
     callback({ authCredentials: { username: credentials.username, password: credentials.password } });
   }).catch(() => callback({ cancel: true }));
 }, { urls: ['<all_urls>'] }, ['asyncBlocking']);
-const cleanup = details => attempts.delete(details.requestId);
-chrome.webRequest.onCompleted.addListener(cleanup, { urls: ['<all_urls>'] });
-chrome.webRequest.onErrorOccurred.addListener(cleanup, { urls: ['<all_urls>'] });
+chrome.webRequest.onCompleted.addListener(details => {
+  if (!attempts.delete(details.requestId)) return;
+  chrome.storage.session.get('authStatus').then(({ authStatus }) => {
+    if (authStatus) return chrome.storage.session.remove('authStatus');
+  }).catch(() => {});
+}, { urls: ['<all_urls>'] });
+chrome.webRequest.onErrorOccurred.addListener(details => attempts.delete(details.requestId), { urls: ['<all_urls>'] });
 
 async function handle(message) {
   await storageReady;
@@ -94,8 +97,8 @@ async function handle(message) {
   throw new Error('Unknown operation.');
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (sender.id !== chrome.runtime.id) return false;
-  handle(message).then(respond).catch(error => respond({ error: error.message }));
+  if (sender.id !== chrome.runtime.id || sender.tab) return false;
+  handle(message).then(respond).catch(error => respond({ error: error?.message || String(error) }));
   return true;
 });
 
@@ -123,32 +126,54 @@ function updateBadge() {
   return badgeUpdates;
 }
 let configurationRevision = 0;
+let checking;
+let checkAbortController;
 async function invalidateCheck() {
   configurationRevision++;
+  checkAbortController?.abort(new DOMException('Proxy settings changed', 'AbortError'));
+  checkAbortController = undefined;
+  checking = undefined;
   await chrome.storage.session.remove('connectionCheck');
 }
-let checking;
 function checkConnection() {
   if (checking) return checking;
-  checking = performCheck().finally(() => { checking = undefined; });
-  return checking;
+  const current = performCheck().finally(() => {
+    if (checking === current) checking = undefined;
+  });
+  checking = current;
+  return current;
 }
 async function performCheck() {
   const before = await snapshot();
   if (!before.active || !before.hasCredentials) throw new Error('Enable your configured proxy with credentials before checking.');
   const revision = configurationRevision;
   const endpoint = JSON.stringify(before.settings);
+  const controller = new AbortController();
+  checkAbortController = controller;
+  const timer = setTimeout(() => controller.abort(new DOMException('Connection check timed out', 'TimeoutError')), 10000);
   let outcome = 'verified';
   let message = 'HTTPS request succeeded through the configured Chrome connection.';
   try {
     const response = await fetch('https://example.com/', {
-      cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(10000)
+      cache: 'no-store', credentials: 'omit', redirect: 'error', signal: controller.signal
     });
-    if (!response.ok) throw new Error('HTTP response was unsuccessful');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     await response.body?.cancel();
-  } catch {
+  } catch (error) {
+    if (revision !== configurationRevision || error?.name === 'AbortError') {
+      throw new Error('Proxy settings changed during the check. Run it again.');
+    }
     outcome = 'failed';
-    message = 'HTTPS check failed. Check proxy, authentication, network, or test-site availability.';
+    if (error?.name === 'TimeoutError') {
+      message = 'HTTPS check timed out after 10 seconds. Check proxy or network availability.';
+    } else if (/^HTTP \d+$/.test(error?.message)) {
+      message = `HTTPS check failed with ${error.message}.`;
+    } else {
+      message = `HTTPS check failed (${error?.message || 'network or authentication error'}).`;
+    }
+  } finally {
+    clearTimeout(timer);
+    if (checkAbortController === controller) checkAbortController = undefined;
   }
   const after = await snapshot();
   if (revision !== configurationRevision || !after.active || JSON.stringify(after.settings) !== endpoint) {

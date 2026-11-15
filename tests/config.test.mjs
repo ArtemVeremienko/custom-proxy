@@ -11,7 +11,8 @@ test('rejects URL injection, malformed endpoints, invalid ports and missing cred
   for (const host of ['', 'https://proxy.example.com', 'host/path', 'host:3129', '-host', 'host..com', 'host space', 'x'.repeat(64)]) {
     assert.throws(() => validate({ ...input, host }));
   }
-  for (const port of ['', 'abc', 0, -1, 65536, 1.5]) assert.throws(() => validate({ ...input, port }));
+  for (const port of ['', '   ', 'abc', 0, -1, 65536, 1.5, true, false, null, undefined]) assert.throws(() => validate({ ...input, port }));
+  assert.throws(() => validate(null));
   assert.throws(() => validate({ ...input, username: '' }));
   assert.throws(() => validate({ ...input, password: '' }));
 });
