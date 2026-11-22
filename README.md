@@ -3,7 +3,9 @@
 Run a private, authenticated HTTPS proxy on AWS Lightsail and connect with Chrome.
 
 1. Follow [the Lightsail setup guide](docs/lightsail.md).
-2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `extension` folder.
+2. Install the extension in Chrome:
+   - **From a release:** Download `lightsail-private-proxy-<version>.zip` from [GitHub Releases](https://github.com/ArtemVeremienko/custom-proxy/releases) and extract it to a permanent folder on your computer (keep this folder — Chrome loads the extension from it). Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder.
+   - **From source:** Clone this repository, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `extension` folder.
 3. To use the same connection in incognito, open the extension's **Details** and enable **Allow in Incognito**.
 4. Open the extension and enter your proxy's hostname, port `3129`, username, and password. Choose **Remember credentials on this device** if desired, click **Save & Connect**, then open a website to verify connectivity in regular and incognito windows.
 
