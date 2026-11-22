@@ -1,6 +1,10 @@
 name: Package Extension
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - extension/manifest.json
   release:
     types: [published]
   workflow_dispatch:
@@ -22,10 +26,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Run tests
-        run: node --test tests/*.test.mjs
-
-      - name: Read manifest version and validate release tag
+      - name: Read manifest version and check release state
         id: meta
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -37,31 +38,55 @@ jobs:
             exit 1
           fi
 
+          SHOULD_PACKAGE="true"
           if [ "$EVENT_NAME" = "release" ]; then
             TAG_VERSION="${RELEASE_TAG#v}"
             if [ "$TAG_VERSION" != "$VERSION" ]; then
               echo "::error::Release tag '$RELEASE_TAG' does not match extension/manifest.json version '$VERSION'"
               exit 1
             fi
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+              echo "Tag v${VERSION} already exists; skipping release."
+              SHOULD_PACKAGE="false"
+            fi
           fi
 
           ZIP_NAME="lightsail-private-proxy-${VERSION}.zip"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
           echo "zip_path=dist/$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "should_package=$SHOULD_PACKAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        if: steps.meta.outputs.should_package == 'true'
+        run: node --test tests/*.test.mjs
 
       - name: Create extension zip archive
+        if: steps.meta.outputs.should_package == 'true'
         run: |
           mkdir -p dist
           (cd extension && zip -r "../${{ steps.meta.outputs.zip_path }}" .)
           unzip -l "${{ steps.meta.outputs.zip_path }}"
 
       - name: Upload workflow artifact
+        if: steps.meta.outputs.should_package == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.meta.outputs.zip_name }}
           path: ${{ steps.meta.outputs.zip_path }}
           if-no-files-found: error
+
+      - name: Create tag and GitHub Release
+        if: github.event_name == 'push' && steps.meta.outputs.should_package == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.meta.outputs.zip_path }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --generate-notes
 
       - name: Attach zip to GitHub Release
         if: github.event_name == 'release'
